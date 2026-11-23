@@ -5057,6 +5057,9 @@ void PrintObject::mark_surface_filament_shells()
                 const Polygons bottom_zone = bottom_layers > 0 ? surfaces_on_layers(idx - bottom_layers + 1, idx - 1, { stBottom, stBottomBridge }) : Polygons();
                 if (top_zone.empty() && bottom_zone.empty())
                     continue;
+                // Leftover strips up to two lines wide next to a zone join it. They come from neighbouring layers'
+                // wall outlines not lining up exactly, e.g. the wider walls of the first layer.
+                const float sliver = float(m_layers[idx]->get_region(int(region_id))->flow(frSolidInfill).scaled_width());
                 Surfaces out;
                 for (const Surface &surface : fill_surfaces.surfaces) {
                     if (surface.surface_type != stInternalSolid) {
@@ -5067,11 +5070,20 @@ void PrintObject::mark_surface_filament_shells()
                     for (const auto &[zone, shell_zone] : { std::pair{ &top_zone, SurfaceShellZone::Top }, std::pair{ &bottom_zone, SurfaceShellZone::Bottom } }) {
                         if (zone->empty() || rest.empty())
                             continue;
-                        for (ExPolygon &expoly : intersection_ex(rest, *zone)) {
+                        ExPolygons in_zone = intersection_ex(rest, *zone);
+                        if (in_zone.empty())
+                            continue;
+                        rest = diff_ex(rest, *zone);
+                        ExPolygons slivers = intersection_ex(diff_ex(rest, opening_ex(rest, sliver)), expand(*zone, 2.f * sliver));
+                        if (! slivers.empty()) {
+                            rest    = diff_ex(rest, slivers);
+                            append(in_zone, std::move(slivers));
+                            in_zone = union_ex(in_zone);
+                        }
+                        for (ExPolygon &expoly : in_zone) {
                             Surface &s   = out.emplace_back(surface, std::move(expoly));
                             s.shell_zone = shell_zone;
                         }
-                        rest = diff_ex(rest, *zone);
                     }
                     for (ExPolygon &expoly : rest)
                         out.emplace_back(surface, std::move(expoly));
