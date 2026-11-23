@@ -143,6 +143,9 @@ unsigned int LayerTools::internal_solid_filament_id(const PrintRegion &region) c
 // 1 based filament of an island's extrusions; the tool ordering and the G-code export must agree on it.
 static unsigned int region_filament(const ExtrusionEntityCollection &extrusions, const PrintRegionConfig &config)
 {
+    // Orca: Solid infill near a top or bottom surface, tagged by Layer::make_fills().
+    if (extrusions.filament_id > 0)
+        return (unsigned int) extrusions.filament_id;
     if (extrusions.has_infill()) {
         if (!extrusions.has_solid_infill())
             return config.sparse_infill_filament_id.value;

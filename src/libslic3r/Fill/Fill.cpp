@@ -1012,7 +1012,9 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
                 else if (params.extrusion_role == erBottomSurface)
                     params.extruder = region_config.bottom_surface_filament_id;
                 else if (params.extrusion_role == erSolidInfill)
-                    params.extruder = region_config.internal_solid_filament_id;
+                    params.extruder = surface.shell_zone == SurfaceShellZone::Top    ? region_config.top_surface_filament_id :
+                                      surface.shell_zone == SurfaceShellZone::Bottom ? region_config.bottom_surface_filament_id :
+                                                                                       region_config.internal_solid_filament_id;
                 // Orca: forced fill order applies only to top/bottom surfaces filled with a
                 // center-based pattern; everything else stays at Default to keep batching together.
                 if (params.pattern == ipConcentric || params.pattern == ipSpiralInset || params.pattern == ipArchimedeanChords || params.pattern == ipOctagramSpiral) {
@@ -1537,9 +1539,16 @@ void Layer::make_fills(const FillAdaptive::RegionOctrees* fill_octrees, FillLigh
                     params.density = 1.0f - (1.0f - elefant_density) * (elefant_layers - (f->layer_id - 1)) / elefant_layers; // Reverse calculation - The higher layer number means the higher density. Counting starts from the second layer.
             }
             // make fill
+            ExtrusionEntitiesPtr &fills = m_regions[surface_fill.region_id]->fills.entities;
+            const size_t          first_new_fill = fills.size();
 			f->fill_surface_extrusion(&surface_fill.surface,
 				params,
-				m_regions[surface_fill.region_id]->fills.entities);
+				fills);
+            // Orca: The tool ordering picks a filament by extrusion role, so tag solid infill printed with a surface filament.
+            if (surface_fill.surface.shell_zone != SurfaceShellZone::None && surface_fill.params.extrusion_role == erSolidInfill)
+                for (size_t i = first_new_fill; i < fills.size(); ++ i)
+                    if (auto *eec = dynamic_cast<ExtrusionEntityCollection*>(fills[i]))
+                        eec->filament_id = int(surface_fill.params.extruder);
 		}
     }
 

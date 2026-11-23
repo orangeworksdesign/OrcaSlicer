@@ -38,15 +38,18 @@ public:
 
     ExtrusionEntitiesPtr entities;     // we own these entities
     bool no_sort;
+    // Orca: 1 based filament that prints this collection, overriding the one its extrusion role selects. 0 if unset.
+    int filament_id = 0;
     ExtrusionEntityCollection(): no_sort(false) {}
-    ExtrusionEntityCollection(const ExtrusionEntityCollection &other) : no_sort(other.no_sort), is_reverse(other.is_reverse) { this->append(other.entities); }
-    ExtrusionEntityCollection(ExtrusionEntityCollection &&other) : entities(std::move(other.entities)), no_sort(other.no_sort), is_reverse(other.is_reverse) {}
+    ExtrusionEntityCollection(const ExtrusionEntityCollection &other) : no_sort(other.no_sort), filament_id(other.filament_id), is_reverse(other.is_reverse) { this->append(other.entities); }
+    ExtrusionEntityCollection(ExtrusionEntityCollection &&other) : entities(std::move(other.entities)), no_sort(other.no_sort), filament_id(other.filament_id), is_reverse(other.is_reverse) {}
     explicit ExtrusionEntityCollection(const ExtrusionPaths &paths);
     ExtrusionEntityCollection& operator=(const ExtrusionEntityCollection &other);
     ExtrusionEntityCollection& operator=(ExtrusionEntityCollection &&other)
     {
         this->entities = std::move(other.entities);
         this->no_sort  = other.no_sort;
+        filament_id    = other.filament_id;
         is_reverse     = other.is_reverse;
         return *this;
     }

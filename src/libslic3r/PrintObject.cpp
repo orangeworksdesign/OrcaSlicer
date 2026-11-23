@@ -810,6 +810,9 @@ void PrintObject::prepare_infill()
     this->combine_infill();
     m_print->throw_if_canceled();
 
+    this->mark_surface_filament_shells();
+    m_print->throw_if_canceled();
+
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
     for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
         for (const Layer *layer : m_layers) {
@@ -1700,7 +1703,9 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "sparse_infill_filament_id"
             || opt_key == "internal_solid_filament_id"
             || opt_key == "top_surface_filament_id"
+            || opt_key == "top_surface_filament_layers"
             || opt_key == "bottom_surface_filament_id"
+            || opt_key == "bottom_surface_filament_layers"
             || opt_key == "sparse_infill_line_width"
             || opt_key == "skin_infill_line_width"
             || opt_key == "skeleton_infill_line_width"
@@ -5015,6 +5020,71 @@ void PrintObject::discover_horizontal_shells()
 // combine fill surfaces across layers to honor the "infill every N layers" option
 // Idempotence of this method is guaranteed by the fact that we don't remove things from
 // fill_surfaces but we only turn them into VOID surfaces, thus preserving the boundaries.
+// Orca: Split the internal solid infill lying within top_surface_filament_layers below a top surface or
+// bottom_surface_filament_layers above a bottom surface, so that it is printed with that surface's filament.
+// The top or bottom surface itself is the first of these layers.
+void PrintObject::mark_surface_filament_shells()
+{
+    for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
+        const PrintRegionConfig &config = this->printing_region(region_id).config();
+        const int top_layers    = config.top_surface_filament_layers.value > 1 &&
+                                  config.top_surface_filament_id.value != config.internal_solid_filament_id.value ?
+                                  config.top_surface_filament_layers.value : 0;
+        const int bottom_layers = config.bottom_surface_filament_layers.value > 1 &&
+                                  config.bottom_surface_filament_id.value != config.internal_solid_filament_id.value ?
+                                  config.bottom_surface_filament_layers.value : 0;
+        if (top_layers == 0 && bottom_layers == 0)
+            continue;
+
+        const int num_layers = int(m_layers.size());
+        // Polygons of the given surface types of this region on layers [first, last].
+        auto surfaces_on_layers = [this, region_id, num_layers](int first, int last, std::initializer_list<SurfaceType> types) {
+            Polygons out;
+            for (int i = std::max(first, 0); i <= std::min(last, num_layers - 1); ++ i)
+                append(out, to_polygons(m_layers[i]->get_region(int(region_id))->fill_surfaces.filter_by_types(types)));
+            return out;
+        };
+
+        // Computed for all layers before any is modified, as each layer reads the surfaces of its neighbours.
+        std::vector<std::optional<Surfaces>> new_surfaces(m_layers.size());
+        tbb::parallel_for(tbb::blocked_range<int>(0, num_layers), [&](const tbb::blocked_range<int> &range) {
+            for (int idx = range.begin(); idx < range.end(); ++ idx) {
+                m_print->throw_if_canceled();
+                const SurfaceCollection &fill_surfaces = m_layers[idx]->get_region(int(region_id))->fill_surfaces;
+                if (! fill_surfaces.has(stInternalSolid))
+                    continue;
+                const Polygons top_zone    = top_layers > 0 ? surfaces_on_layers(idx + 1, idx + top_layers - 1, { stTop }) : Polygons();
+                const Polygons bottom_zone = bottom_layers > 0 ? surfaces_on_layers(idx - bottom_layers + 1, idx - 1, { stBottom, stBottomBridge }) : Polygons();
+                if (top_zone.empty() && bottom_zone.empty())
+                    continue;
+                Surfaces out;
+                for (const Surface &surface : fill_surfaces.surfaces) {
+                    if (surface.surface_type != stInternalSolid) {
+                        out.emplace_back(surface);
+                        continue;
+                    }
+                    ExPolygons rest = { surface.expolygon };
+                    for (const auto &[zone, shell_zone] : { std::pair{ &top_zone, SurfaceShellZone::Top }, std::pair{ &bottom_zone, SurfaceShellZone::Bottom } }) {
+                        if (zone->empty() || rest.empty())
+                            continue;
+                        for (ExPolygon &expoly : intersection_ex(rest, *zone)) {
+                            Surface &s   = out.emplace_back(surface, std::move(expoly));
+                            s.shell_zone = shell_zone;
+                        }
+                        rest = diff_ex(rest, *zone);
+                    }
+                    for (ExPolygon &expoly : rest)
+                        out.emplace_back(surface, std::move(expoly));
+                }
+                new_surfaces[idx] = std::move(out);
+            }
+        });
+        for (int idx = 0; idx < num_layers; ++ idx)
+            if (new_surfaces[idx])
+                m_layers[idx]->get_region(int(region_id))->fill_surfaces.set(std::move(*new_surfaces[idx]));
+    }
+}
+
 void PrintObject::combine_infill()
 {
     // Work on each region separately.
