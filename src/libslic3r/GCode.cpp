@@ -7262,7 +7262,8 @@ LayerResult GCode::process_layer(
                             }
                         };
 
-                        const auto is_inner = [](const ExtrusionEntity *entity) { return is_inner_wall(*entity); };
+                        const int outer_loops = region.config().outer_wall_filament_loops.value;
+                        const auto is_inner = [outer_loops](const ExtrusionEntity *entity) { return is_inner_wall(*entity, outer_loops); };
                         const size_t inner_count = entity_type == ObjectByExtruder::Island::Region::PERIMETERS ?
                             std::count_if(extrusions->entities.begin(), extrusions->entities.end(), is_inner) : 0;
                         bool split_mixed_perimeters =

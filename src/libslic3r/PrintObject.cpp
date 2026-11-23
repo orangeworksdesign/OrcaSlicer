@@ -1794,6 +1794,7 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (
                opt_key == "outer_wall_line_width"
             || opt_key == "outer_wall_filament_id"
+            || opt_key == "outer_wall_filament_loops"
             || opt_key == "inner_wall_filament_id"
             || opt_key == "fuzzy_skin"
             || opt_key == "fuzzy_skin_thickness"

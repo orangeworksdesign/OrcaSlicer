@@ -6157,6 +6157,16 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInt(0));
 
+    def = this->add("outer_wall_filament_loops", coInt);
+    def->label = L("Outer wall loops");
+    def->category = L("Extruders");
+    def->tooltip = L("Number of walls, counted from the outside, that are printed with the outer walls filament. "
+                     "The remaining walls use the inner walls filament.");
+    def->min = 1;
+    def->max = 1000;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(1));
+
     def = this->add("inner_wall_filament_id", coInt);
     def->gui_type = ConfigOptionDef::GUIType::i_enum_open;
     def->label = L("Inner walls");

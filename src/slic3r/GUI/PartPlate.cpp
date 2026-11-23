@@ -3527,12 +3527,13 @@ std::map<int, size_t> PartPlate::get_object_filament_extruders(
 
     const bool has_brim = effective_int("brim_type") != int(BrimType::btNoBrim) && effective_float("brim_width") > 0.0;
     const int wall_loops = effective_int("wall_loops");
+    const int outer_wall_filament_loops = std::max(1, effective_int("outer_wall_filament_loops"));
     const double sparse_infill_density = effective_float("sparse_infill_density");
     const int top_shell_layers = effective_int("top_shell_layers");
     const int bottom_shell_layers = effective_int("bottom_shell_layers");
     const std::array<std::pair<const char *, bool>, 6> feature_filament_keys = {
         std::pair{ "outer_wall_filament_id", wall_loops > 0 || has_brim },
-        std::pair{ "inner_wall_filament_id", wall_loops > 1 },
+        std::pair{ "inner_wall_filament_id", wall_loops > outer_wall_filament_loops },
         std::pair{ "sparse_infill_filament_id", sparse_infill_density > 0.0 },
         std::pair{ "internal_solid_filament_id", sparse_infill_density > 0.0 || top_shell_layers > 0 || bottom_shell_layers > 0 },
         std::pair{ "top_surface_filament_id", top_shell_layers > 0 },

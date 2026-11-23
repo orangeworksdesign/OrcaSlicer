@@ -158,10 +158,11 @@ static unsigned int region_filament(const ExtrusionEntityCollection &extrusions,
         return config.internal_solid_filament_id.value;
     }
     // Orca: Classic gap fill lies inside the outer wall. With one wall, the inner wall filament is not in use.
+    const int outer_loops = config.outer_wall_filament_loops.value;
     if (extrusions.role() == erGapFill)
-        return config.wall_loops.value > 1 ? config.inner_wall_filament_id.value : config.outer_wall_filament_id.value;
+        return config.wall_loops.value > outer_loops ? config.inner_wall_filament_id.value : config.outer_wall_filament_id.value;
     const ExtrusionEntitiesPtr &walls = extrusions.entities;
-    return !walls.empty() && std::all_of(walls.begin(), walls.end(), [](const ExtrusionEntity *ee) { return is_inner_wall(*ee); }) ?
+    return !walls.empty() && std::all_of(walls.begin(), walls.end(), [outer_loops](const ExtrusionEntity *ee) { return is_inner_wall(*ee, outer_loops); }) ?
         config.inner_wall_filament_id.value : config.outer_wall_filament_id.value;
 }
 
@@ -866,11 +867,12 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
                 if (something_nonoverriddable){
                		layer_tools.extruders.emplace_back((extruder_override == 0) ? region.config().outer_wall_filament_id.value : extruder_override);
                     const ExtrusionEntitiesPtr &islands = layerm->perimeters.entities;
-                    const bool has_inner_wall = std::any_of(islands.begin(), islands.end(), [](const ExtrusionEntity *island) {
+                    const int outer_loops = region.config().outer_wall_filament_loops.value;
+                    const bool has_inner_wall = std::any_of(islands.begin(), islands.end(), [outer_loops](const ExtrusionEntity *island) {
                         const ExtrusionEntitiesPtr &walls = static_cast<const ExtrusionEntityCollection*>(island)->entities;
-                        return std::any_of(walls.begin(), walls.end(), [](const ExtrusionEntity *ee) { return is_inner_wall(*ee); });
+                        return std::any_of(walls.begin(), walls.end(), [outer_loops](const ExtrusionEntity *ee) { return is_inner_wall(*ee, outer_loops); });
                     });
-                    if (extruder_override == 0 && region.config().wall_loops.value > 1 && has_inner_wall)
+                    if (extruder_override == 0 && region.config().wall_loops.value > outer_loops && has_inner_wall)
                         layer_tools.extruders.emplace_back(region.config().inner_wall_filament_id.value);
                     if (layerCount == 0) {
                         firstLayerExtruders.emplace_back((extruder_override == 0) ? region.config().outer_wall_filament_id.value : extruder_override);

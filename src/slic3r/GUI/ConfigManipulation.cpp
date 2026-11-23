@@ -1044,6 +1044,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     const wxString wall_filament_reason = _L("Enable walls or a brim to select the wall filament.");
     toggle_field("outer_wall_filament_id", have_perimeters || have_brim, -1, wall_filament_reason);
     toggle_field("inner_wall_filament_id", have_perimeters || have_brim, -1, wall_filament_reason);
+    toggle_field("outer_wall_filament_loops", have_perimeters, -1, wall_filament_reason);
 
     const BrimType brim_type = config->opt_enum<BrimType>("brim_type");
     const bool have_auto_brim_ear = brim_type == btEar && !is_belt_tilted;

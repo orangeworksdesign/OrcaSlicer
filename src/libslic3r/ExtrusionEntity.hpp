@@ -166,9 +166,10 @@ public:
 };
 
 // Orca: Overhang paths share one role on every wall, so the inset index tells inner walls apart where set.
-inline bool is_inner_wall(const ExtrusionEntity &entity)
+// outer_loops is the number of walls, counted from the outside, that count as outer walls for filament assignment.
+inline bool is_inner_wall(const ExtrusionEntity &entity, int outer_loops = 1)
 {
-    return entity.inset_idx >= 0 ? entity.inset_idx > 0 : entity.role() == erPerimeter;
+    return entity.inset_idx >= 0 ? entity.inset_idx >= outer_loops : entity.role() == erPerimeter;
 }
 
 typedef std::vector<ExtrusionEntity*> ExtrusionEntitiesPtr;
