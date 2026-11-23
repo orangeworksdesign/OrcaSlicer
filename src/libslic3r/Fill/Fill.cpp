@@ -1083,7 +1083,10 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 				params.flow   = params.bridge ?
 					//Orca: enable thick bridge based on config
 					layerm.bridging_flow(extrusion_role, is_thick_bridge) :
-					layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness);
+					// Orca: Bottom surfaces and the solid layers printed with a surface filament take the width for its nozzle,
+					// not for the internal solid infill filament their flow role selects.
+					layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness,
+					            surface.shell_zone != SurfaceShellZone::None || surface.is_bottom() ? params.extruder : 0);
 
 				params.role_speed = 0;
                 const size_t role_extruder_id = layer.get_extruder_id(params.extruder);

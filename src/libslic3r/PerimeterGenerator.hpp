@@ -96,6 +96,10 @@ public:
     Flow                         ext_perimeter_flow;
     Flow                         overhang_flow;
     Flow                         solid_infill_flow;
+    // Orca: Walls numbered 1 to outer_group_loops - 1 are printed with the outer wall filament, so they are sized
+    // by outer_group_flow, the inner wall width for its nozzle. 1 if they are sized like the other inner walls.
+    int                          outer_group_loops = 1;
+    Flow                         outer_group_flow;
     const PrintRegionConfig     *config;
     const PrintObjectConfig     *object_config;
     const PrintConfig           *print_config;
@@ -111,6 +115,7 @@ public:
     std::vector<Polygons>       m_lower_polygons_series;
     std::vector<Polygons>       m_external_lower_polygons_series;
     std::vector<Polygons>       m_smaller_external_lower_polygons_series;
+    std::vector<Polygons>       m_outer_group_lower_polygons_series;
 
     bool                                            has_fuzzy_skin = false;
     bool                                            has_fuzzy_hole = false;

@@ -30,7 +30,7 @@ unsigned int PrintRegion::extruder(FlowRole role) const
     return extruder;
 }
 
-Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool first_layer) const
+Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool first_layer, unsigned int filament_id) const
 {
     const PrintConfig          &print_config = object.print()->config();
     ConfigOptionFloatOrPercent config_width;
@@ -57,7 +57,7 @@ Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_he
     
     // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
     // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
-    auto nozzle_diameter = float(nozzle_diameter_for_filament(print_config, this->extruder(role), object.print()->is_BBL_printer()));
+    auto nozzle_diameter = float(nozzle_diameter_for_filament(print_config, filament_id > 0 ? filament_id : this->extruder(role), object.print()->is_BBL_printer()));
     return Flow::new_from_config_width(role, config_width, nozzle_diameter, float(layer_height));
 }
 

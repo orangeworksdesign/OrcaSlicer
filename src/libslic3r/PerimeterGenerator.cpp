@@ -170,6 +170,11 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
                 extrusion_mm3_per_mm = perimeter_generator.ext_mm3_per_mm();
                 extrusion_width = perimeter_generator.ext_perimeter_flow.width();
             }
+        } else if (loop.depth < perimeter_generator.outer_group_loops) {
+            // Orca: inner wall printed with the outer wall filament
+            lower_polygons_series = &perimeter_generator.m_outer_group_lower_polygons_series;
+            extrusion_mm3_per_mm = perimeter_generator.outer_group_flow.mm3_per_mm();
+            extrusion_width = perimeter_generator.outer_group_flow.width();
         } else {
             //BBS: normal perimeter
             lower_polygons_series = &perimeter_generator.m_lower_polygons_series;
@@ -1527,6 +1532,21 @@ void PerimeterGenerator::process_classic()
         m_external_lower_polygons_series = generate_lower_polygons_series(this->ext_perimeter_flow.width());
     }
     m_smaller_external_lower_polygons_series = generate_lower_polygons_series(this->smaller_ext_perimeter_flow.width());
+    if (this->outer_group_loops > 1)
+        m_outer_group_lower_polygons_series = generate_lower_polygons_series(this->outer_group_flow.width());
+    // Orca: Spacing between wall i - 1 and wall i, i > 0. Walls below outer_group_loops are sized by outer_group_flow.
+    const coord_t outer_group_spacing = this->outer_group_flow.scaled_spacing();
+    auto wall_distance = [&](int i) -> coord_t {
+        if (this->outer_group_loops <= 1)
+            return i == 1 ? ext_perimeter_spacing2 : perimeter_spacing;
+        if (i == 1)
+            return ext_perimeter_spacing2 - perimeter_spacing / 2 + outer_group_spacing / 2;
+        if (i < this->outer_group_loops)
+            return outer_group_spacing;
+        if (i == this->outer_group_loops)
+            return (outer_group_spacing + perimeter_spacing) / 2;
+        return perimeter_spacing;
+    };
     // we need to process each island separately because we might have different
     // extra perimeters for each one
     Surfaces all_surfaces = this->slices->surfaces;
@@ -1632,7 +1652,7 @@ void PerimeterGenerator::process_classic()
                 } else {
                     //FIXME Is this offset correct if the line width of the inner perimeters differs
                     // from the line width of the infill?
-                    coord_t distance = (i == 1) ? ext_perimeter_spacing2 : perimeter_spacing;
+                    coord_t distance = wall_distance(i);
                     //BBS
                     //offsets = this->config->thin_walls ?
                         // This path will ensure, that the perimeters do not overfill, as in
@@ -2045,6 +2065,8 @@ void PerimeterGenerator::process_classic()
             (loop_number == 0) ?
                 // one loop
                 ext_perimeter_spacing / 2 :
+                // Orca: the innermost wall is printed with the outer wall filament
+                (loop_number < this->outer_group_loops) ? outer_group_spacing / 2 :
                 // two or more loops?
                 perimeter_spacing / 2;
         
@@ -2679,6 +2701,36 @@ void PerimeterGenerator::process_arachne()
         m_lower_slices_polygons = offset(*this->lower_slices, float(scale_(+nozzle_diameter / 2)));
     }
 
+    // Orca: Arachne walls of outline, numbered from 0 for the wall numbered first_wall in the island. The walls numbered
+    // below outer_group_loops are printed with the outer wall filament and sized by outer_group_flow, so they are generated
+    // in a pass of their own and the walls inside them in a second one. bead_width_first is used for the first wall
+    // when it is not one of them.
+    const coord_t outer_group_spacing = this->outer_group_flow.scaled_spacing();
+    auto make_walls = [&](const Polygons &outline, coord_t bead_width_first, int first_wall, coord_t loops, coord_t wall_0_inset,
+                          const Arachne::WallToolPathsParams &params, Polygons &inner_contour) {
+        const coord_t outer_loops = std::clamp<coord_t>(coord_t(this->outer_group_loops - first_wall), 0, loops);
+        if (this->outer_group_loops <= 1 || outer_loops == 0) {
+            Arachne::WallToolPaths tool_paths(outline, bead_width_first, perimeter_spacing, size_t(loops), wall_0_inset, layer_height, params);
+            std::vector<Arachne::VariableWidthLines> walls = tool_paths.getToolPaths();
+            inner_contour = tool_paths.getInnerContour();
+            return walls;
+        }
+        Arachne::WallToolPaths outer_tool_paths(outline, first_wall == 0 ? bead_width_first : outer_group_spacing, outer_group_spacing,
+                                                size_t(outer_loops), wall_0_inset, layer_height, params);
+        std::vector<Arachne::VariableWidthLines> walls = outer_tool_paths.getToolPaths();
+        inner_contour = outer_tool_paths.getInnerContour();
+        if (outer_loops < loops && ! inner_contour.empty()) {
+            Arachne::WallToolPaths inner_tool_paths(inner_contour, perimeter_spacing, perimeter_spacing, size_t(loops - outer_loops), 0, layer_height, params);
+            std::vector<Arachne::VariableWidthLines> inner_walls = inner_tool_paths.getToolPaths();
+            for (Arachne::VariableWidthLines &lines : inner_walls)
+                for (Arachne::ExtrusionLine &el : lines)
+                    el.inset_idx += size_t(outer_loops);
+            append(walls, std::move(inner_walls));
+            inner_contour = inner_tool_paths.getInnerContour();
+        }
+        return walls;
+    };
+
     Surfaces all_surfaces = this->slices->surfaces;
 
     process_no_bridge(all_surfaces, perimeter_spacing, ext_perimeter_width);
@@ -2750,10 +2802,10 @@ void PerimeterGenerator::process_arachne()
             Arachne::WallToolPathsParams input_params_tmp = input_params;
         
             Polygons   last_p = to_polygons(last);
-            Arachne::WallToolPaths wallToolPaths(last_p, bead_width_0, perimeter_spacing, coord_t(loop_number + 1),
-                                                   wall_0_inset, layer_height, input_params_tmp);
-            std::vector<Arachne::VariableWidthLines>   perimeters = wallToolPaths.getToolPaths();
-            ExPolygons  infill_contour = union_ex(wallToolPaths.getInnerContour());
+            Polygons                                   wall_inner_contour;
+            std::vector<Arachne::VariableWidthLines>   perimeters = make_walls(last_p, bead_width_0, 0, coord_t(loop_number + 1),
+                                                                               wall_0_inset, input_params_tmp, wall_inner_contour);
+            ExPolygons  infill_contour = union_ex(wall_inner_contour);
 
             // Check if there are some remaining perimeters to generate (the number of perimeters
             // is greater than one together with enabled the single perimeter on top surface feature).
@@ -2811,9 +2863,7 @@ void PerimeterGenerator::process_arachne()
                 auto generate_full_perimeters = [&]() {
                     if (full_perimeters_generated)
                         return;
-                    Arachne::WallToolPaths full_tool_paths(last_p, bead_width_0, perimeter_spacing, coord_t(inner_loop_number + 2), wall_0_inset, layer_height, input_params_tmp);
-                    full_perimeters           = full_tool_paths.getToolPaths();
-                    full_inner_contour        = full_tool_paths.getInnerContour();
+                    full_perimeters           = make_walls(last_p, bead_width_0, 0, coord_t(inner_loop_number + 2), wall_0_inset, input_params_tmp, full_inner_contour);
                     full_perimeters_generated = true;
                 };
 
@@ -2852,8 +2902,8 @@ void PerimeterGenerator::process_arachne()
                     const Polygons inner_region        = to_polygons(offset_ex(clip_walls_over_top ? infill_contour
                                                                                                    : diff_ex(infill_contour, top_expolygons),
                                                                               wall_0_inset));
-                    Arachne::WallToolPaths inner_wall_tool_paths(inner_region, perimeter_spacing, perimeter_spacing, coord_t(inner_loop_number + 1), 0, layer_height, input_params_tmp);
-                    std::vector<Arachne::VariableWidthLines> inner_perimeters = inner_wall_tool_paths.getToolPaths();
+                    Polygons                                 inner_walls_contour;
+                    std::vector<Arachne::VariableWidthLines> inner_perimeters = make_walls(inner_region, perimeter_spacing, 1, coord_t(inner_loop_number + 1), 0, input_params_tmp, inner_walls_contour);
 
                     if (clip_walls_over_top) {
                         Polygons kept_over_top;
@@ -2876,7 +2926,7 @@ void PerimeterGenerator::process_arachne()
                                                       perimeter_spacing);
 
                     perimeters.insert(perimeters.end(), inner_perimeters.begin(), inner_perimeters.end());
-                    infill_contour = union_ex(top_expolygons, inner_wall_tool_paths.getInnerContour());
+                    infill_contour = union_ex(top_expolygons, inner_walls_contour);
                 } else {
                     // There is no top surface ExPolygon, so use the walls generated like when the single perimeter
                     // feature is disabled.
@@ -2892,7 +2942,7 @@ void PerimeterGenerator::process_arachne()
             #ifdef ARACHNE_DEBUG
             {
                 static int iRun = 0;
-                export_perimeters_to_svg(debug_out_path("arachne-perimeters-%d-%d.svg", layer_id, iRun++), to_polygons(last), perimeters, union_ex(wallToolPaths.getInnerContour()));
+                export_perimeters_to_svg(debug_out_path("arachne-perimeters-%d-%d.svg", layer_id, iRun++), to_polygons(last), perimeters, infill_contour);
             }
     #endif
 
@@ -3119,7 +3169,8 @@ void PerimeterGenerator::process_arachne()
                 result.has_loops = true;
             }
 
-            const coord_t spacing = (perimeters.size() == 1) ? ext_perimeter_spacing2 : perimeter_spacing;
+            const coord_t spacing = (perimeters.size() == 1) ? ext_perimeter_spacing2 :
+                                    (int(perimeters.size()) <= this->outer_group_loops) ? outer_group_spacing : perimeter_spacing;
 
             if (offset_ex(infill_contour, -float(spacing / 2.)).empty())
                 infill_contour.clear(); // Infill region is too small, so let's filter it out.
@@ -3133,6 +3184,8 @@ void PerimeterGenerator::process_arachne()
                 (loop_number == 0) ?
                 // one loop
                 ext_perimeter_spacing :
+                // Orca: the innermost wall is printed with the outer wall filament
+                (loop_number < this->outer_group_loops) ? outer_group_spacing :
                 // two or more loops?
                 perimeter_spacing;
             coord_t top_inset = inset;

@@ -90,7 +90,8 @@ public:
     ExtrusionEntityCollection   fills;
 
     Flow    flow(FlowRole role) const;
-    Flow    flow(FlowRole role, double layer_height) const;
+    // filament_id: 1 based filament whose nozzle sets the width, 0 for the one the role selects.
+    Flow    flow(FlowRole role, double layer_height, unsigned int filament_id = 0) const;
     Flow    bridging_flow(FlowRole role, bool thick_bridge = false) const;
 
     void    slices_to_fill_surfaces_clipped();

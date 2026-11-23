@@ -50,9 +50,9 @@ Flow LayerRegion::flow(FlowRole role) const
     return this->flow(role, m_layer->height);
 }
 
-Flow LayerRegion::flow(FlowRole role, double layer_height) const
+Flow LayerRegion::flow(FlowRole role, double layer_height, unsigned int filament_id) const
 {
-    return m_region->flow(*m_layer->object(), role, layer_height, m_layer->id() == 0);
+    return m_region->flow(*m_layer->object(), role, layer_height, m_layer->id() == 0, filament_id);
 }
 
 Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const
@@ -159,6 +159,13 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
     g.ext_perimeter_flow    = this->flow(frExternalPerimeter);
     g.overhang_flow         = this->bridging_flow(frPerimeter, object_config.thick_bridges);
     g.solid_infill_flow     = this->flow(frSolidInfill);
+    // Orca: The inner walls printed with the outer wall filament are sized for its nozzle. Only where that changes their
+    // width, so the walls are generated as before otherwise.
+    g.outer_group_flow      = this->flow(frPerimeter, this->layer()->height, region_config.outer_wall_filament_id.value);
+    if (region_config.outer_wall_filament_loops.value > 1 &&
+        region_config.outer_wall_filament_id.value != region_config.inner_wall_filament_id.value &&
+        g.outer_group_flow.scaled_width() != g.perimeter_flow.scaled_width())
+        g.outer_group_loops = region_config.outer_wall_filament_loops.value;
 
     // Cumulative sum of polygons over all the regions, less what the lower layer could not print.
     ExPolygons lower_slices;
