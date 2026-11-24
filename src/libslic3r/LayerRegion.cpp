@@ -121,6 +121,18 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) &&
          this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
 
+    // Orca: In shell mode every wall belongs to the shell, as many as fit its thickness. See PrintObject::make_shell_zones().
+    const bool        shell_mode = region_config.shell_thickness.value > 0.;
+    PrintRegionConfig shell_region_config;
+    if (shell_mode) {
+        const Flow ext_flow   = this->flow(frExternalPerimeter);
+        const Flow inner_flow = this->flow(frPerimeter);
+        shell_region_config   = region_config;
+        shell_region_config.wall_loops.value =
+            1 + std::max(0, int(std::lround((region_config.shell_thickness.value - ext_flow.width()) / inner_flow.spacing())));
+    }
+    const PrintRegionConfig &generator_config = shell_mode ? shell_region_config : region_config;
+
     double model_rotation_rad = 0.0;
     if (region_config.align_infill_direction_to_model) {
         auto m = this->layer()->object()->trafo().matrix();
@@ -134,7 +146,7 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         this->layer()->height,
         this->layer()->slice_z,
         this->flow(frPerimeter),
-        &region_config,
+        &generator_config,
         &this->layer()->object()->config(),
         &print_config,
         spiral_mode,
@@ -166,7 +178,8 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         region_config.outer_wall_filament_id.value != region_config.inner_wall_filament_id.value &&
         g.outer_group_flow.scaled_width() != g.perimeter_flow.scaled_width())
         g.outer_group_loops = region_config.outer_wall_filament_loops.value;
-    g.shell_zone       = union_ex(this->shell_zone_top, this->shell_zone_bottom);
+    if (! shell_mode)
+        g.shell_zone   = union_ex(this->shell_zone_top, this->shell_zone_bottom);
     g.shell_zone_walls = std::max(1, region_config.outer_wall_filament_loops.value);
 
     // Cumulative sum of polygons over all the regions, less what the lower layer could not print.

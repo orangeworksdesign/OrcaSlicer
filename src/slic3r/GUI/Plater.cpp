@@ -2791,6 +2791,7 @@ Sidebar::Sidebar(Plater *parent)
     Choice::register_dynamic_list("internal_solid_filament_id", &dynamic_filament_list);
     Choice::register_dynamic_list("top_surface_filament_id", &dynamic_filament_list);
     Choice::register_dynamic_list("bottom_surface_filament_id", &dynamic_filament_list);
+    Choice::register_dynamic_list("shell_filament_id", &dynamic_filament_list);
     Choice::register_dynamic_list("brim_filament_id", &dynamic_physical_filament_list);
     Choice::register_dynamic_list("wipe_tower_filament", &dynamic_physical_filament_list);
 
@@ -7910,7 +7911,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         "extruder_colour", "filament_colour", "filament_type", "filament_is_support", "material_colour", "printable_height", "extruder_printable_height", "printer_model", "printer_technology",
         // These values are necessary to construct SlicingParameters by the Canvas3D variable layer height editor.
         "layer_height", "initial_layer_print_height", "min_layer_height", "max_layer_height",
-        "wall_loops", "outer_wall_filament_id", "outer_wall_filament_loops", "inner_wall_filament_id", "sparse_infill_density", "sparse_infill_filament_id", "top_shell_layers",
+        "wall_loops", "outer_wall_filament_id", "outer_wall_filament_loops", "inner_wall_filament_id", "shell_filament_id", "shell_thickness", "sparse_infill_density", "sparse_infill_filament_id", "top_shell_layers",
         "enable_support", "support_filament", "support_interface_filament",
         "support_top_z_distance", "support_bottom_z_distance", "raft_layers",
         "wipe_tower_rotation_angle", "wipe_tower_cone_angle", "wipe_tower_extra_spacing", "wipe_tower_extra_flow", "wipe_tower_max_purge_speed",
@@ -22189,7 +22190,7 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
                  opt_key == "top_surface_filament_id" || opt_key == "bottom_surface_filament_id" ||
                  opt_key == "brim_filament_id" ||
                  opt_key == "enable_support" || opt_key == "raft_layers" || opt_key == "wall_loops" ||
-                 opt_key == "outer_wall_filament_loops" ||
+                 opt_key == "outer_wall_filament_loops" || opt_key == "shell_filament_id" || opt_key == "shell_thickness" ||
                  opt_key == "sparse_infill_density" || opt_key == "top_shell_layers" ||
                  opt_key == "bottom_shell_layers" || opt_key == "brim_type" || opt_key == "brim_width") {
             update_scheduled = true;

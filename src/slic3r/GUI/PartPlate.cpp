@@ -3531,13 +3531,15 @@ std::map<int, size_t> PartPlate::get_object_filament_extruders(
     const double sparse_infill_density = effective_float("sparse_infill_density");
     const int top_shell_layers = effective_int("top_shell_layers");
     const int bottom_shell_layers = effective_int("bottom_shell_layers");
-    const std::array<std::pair<const char *, bool>, 6> feature_filament_keys = {
+    const bool has_shell = effective_float("shell_thickness") > 0.0;
+    const std::array<std::pair<const char *, bool>, 7> feature_filament_keys = {
         std::pair{ "outer_wall_filament_id", wall_loops > 0 || has_brim },
         std::pair{ "inner_wall_filament_id", wall_loops > outer_wall_filament_loops },
         std::pair{ "sparse_infill_filament_id", sparse_infill_density > 0.0 },
         std::pair{ "internal_solid_filament_id", sparse_infill_density > 0.0 || top_shell_layers > 0 || bottom_shell_layers > 0 },
         std::pair{ "top_surface_filament_id", top_shell_layers > 0 },
-        std::pair{ "bottom_surface_filament_id", bottom_shell_layers > 0 }
+        std::pair{ "bottom_surface_filament_id", bottom_shell_layers > 0 },
+        std::pair{ "shell_filament_id", has_shell }
     };
     auto collect_config_filaments = [&filament_ids, &feature_filament_keys](const DynamicConfig &config) {
         for (const auto &[key, active] : feature_filament_keys) {

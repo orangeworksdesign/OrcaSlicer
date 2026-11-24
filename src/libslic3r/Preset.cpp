@@ -1313,6 +1313,8 @@ static std::vector<std::string> s_Preset_print_options{
     "top_surface_filament_layers",
     "bottom_surface_filament_id",
     "bottom_surface_filament_layers",
+    "shell_filament_id",
+    "shell_thickness",
     "brim_filament_id",
     "support_filament",
     "support_interface_filament",

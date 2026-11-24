@@ -1802,6 +1802,8 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "outer_wall_filament_loops"
             || opt_key == "top_surface_filament_layers"
             || opt_key == "bottom_surface_filament_layers"
+            || opt_key == "shell_filament_id"
+            || opt_key == "shell_thickness"
             || opt_key == "inner_wall_filament_id"
             || opt_key == "fuzzy_skin"
             || opt_key == "fuzzy_skin_thickness"
@@ -4482,6 +4484,17 @@ PrintRegionConfig region_config_from_model_volume(const PrintRegionConfig &defau
     clamp_feature_filament_to_valid(config.internal_solid_filament_id, num_extruders);
     clamp_feature_filament_to_valid(config.top_surface_filament_id, num_extruders);
     clamp_feature_filament_to_valid(config.bottom_surface_filament_id, num_extruders);
+    // Orca: The shell filament prints all walls and the top and bottom surfaces; the infill inside keeps its own filaments.
+    // See PrintObject::make_shell_zones() for the rest of the shell.
+    if (config.shell_thickness.value > 0.) {
+        const int shell = config.shell_filament_id.value > 0 && config.shell_filament_id.value <= int(num_extruders) ?
+                              config.shell_filament_id.value : config.outer_wall_filament_id.value;
+        config.outer_wall_filament_id.value     = shell;
+        config.inner_wall_filament_id.value     = shell;
+        config.top_surface_filament_id.value    = shell;
+        config.bottom_surface_filament_id.value = shell;
+        config.outer_wall_filament_loops.value  = 1;
+    }
     if (config.sparse_infill_density.value < 0.00011f)
         // Switch of infill for very low infill rates, also avoid division by zero in infill generator for these very low rates.
         // See GH issue #5910.
@@ -5028,14 +5041,41 @@ void PrintObject::make_shell_zones()
     const int num_layers = int(m_layers.size());
     for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
         const PrintRegionConfig &config        = this->printing_region(region_id).config();
-        const int                top_layers    = config.top_surface_filament_layers.value > 1 ? config.top_surface_filament_layers.value : 0;
-        const int                bottom_layers = config.bottom_surface_filament_layers.value > 1 ? config.bottom_surface_filament_layers.value : 0;
+        const double             shell         = config.shell_thickness.value;
+        const int                top_layers    = shell <= 0. && config.top_surface_filament_layers.value > 1 ? config.top_surface_filament_layers.value : 0;
+        const int                bottom_layers = shell <= 0. && config.bottom_surface_filament_layers.value > 1 ? config.bottom_surface_filament_layers.value : 0;
         tbb::parallel_for(tbb::blocked_range<int>(0, num_layers), [&](const tbb::blocked_range<int> &range) {
             for (int idx = range.begin(); idx < range.end(); ++ idx) {
                 m_print->throw_if_canceled();
                 LayerRegion *layerm = m_layers[idx]->get_region(int(region_id));
                 // Strips narrower than a quarter of a line, where the outlines of neighbouring layers differ slightly, are noise.
                 const float noise = 0.25f * float(layerm->flow(frSolidInfill).scaled_width());
+                if (shell > 0.) {
+                    // The shell: what lies within its thickness of the object's surface in any direction, that is the
+                    // layer less the object eroded by a ball of that radius. A layer within the thickness of the object's
+                    // bottom or top has no core. Kept as the top zone, printed with the top surface filament, which the
+                    // shell sets to its own.
+                    const double z      = m_layers[idx]->slice_z;
+                    const double bottom = m_layers.front()->print_z - m_layers.front()->height;
+                    const double top    = m_layers.back()->print_z;
+                    Polygons     core;
+                    if (z - bottom >= shell && top - z >= shell) {
+                        core = to_polygons(m_layers[idx]->lslices);
+                        // Erode by the ball's cross-section at each layer within reach, this one included.
+                        auto erode = [&](int i) {
+                            const double dz = std::abs(m_layers[i]->slice_z - z);
+                            if (dz >= shell)
+                                return false;
+                            core = intersection(core, offset(m_layers[i]->lslices, -float(scale_(std::sqrt(shell * shell - dz * dz)))));
+                            return ! core.empty();
+                        };
+                        for (int i = idx; i >= 0 && erode(i); -- i) ;
+                        for (int i = idx + 1; i < num_layers && ! core.empty() && erode(i); ++ i) ;
+                    }
+                    layerm->shell_zone_top    = opening_ex(diff_ex(m_layers[idx]->lslices, core), noise);
+                    layerm->shell_zone_bottom.clear();
+                    continue;
+                }
                 auto shell_zone = [this, idx, num_layers, noise](int layers, int dir) {
                     const ExPolygons &slices  = m_layers[idx]->lslices;
                     Polygons          covered = to_polygons(slices);
@@ -5061,7 +5101,9 @@ void PrintObject::mark_surface_filament_shells()
         const PrintRegionConfig &config        = this->printing_region(region_id).config();
         const bool               top_infill    = config.top_surface_filament_id.value != config.internal_solid_filament_id.value;
         const bool               bottom_infill = config.bottom_surface_filament_id.value != config.internal_solid_filament_id.value;
-        if (! top_infill && ! bottom_infill)
+        // Orca: The shell is solid through its thickness.
+        const bool               shell_mode    = config.shell_thickness.value > 0.;
+        if (! top_infill && ! bottom_infill && ! shell_mode)
             continue;
         std::vector<std::optional<Surfaces>> new_surfaces(m_layers.size());
         tbb::parallel_for(tbb::blocked_range<int>(0, num_layers), [&](const tbb::blocked_range<int> &range) {
@@ -5069,17 +5111,19 @@ void PrintObject::mark_surface_filament_shells()
                 m_print->throw_if_canceled();
                 const LayerRegion       *layerm        = m_layers[idx]->get_region(int(region_id));
                 const ExPolygons         empty;
-                const ExPolygons        &top_zone      = top_infill ? layerm->shell_zone_top : empty;
+                const ExPolygons        &top_zone      = top_infill || shell_mode ? layerm->shell_zone_top : empty;
                 const ExPolygons        &bottom_zone   = bottom_infill ? layerm->shell_zone_bottom : empty;
                 const SurfaceCollection &fill_surfaces = layerm->fill_surfaces;
                 if ((top_zone.empty() && bottom_zone.empty()) ||
-                    ! (fill_surfaces.has(stInternalSolid) || fill_surfaces.has(stInternalBridge) || fill_surfaces.has(stBottomBridge)))
+                    ! (fill_surfaces.has(stInternalSolid) || fill_surfaces.has(stInternalBridge) || fill_surfaces.has(stBottomBridge) ||
+                       (shell_mode && fill_surfaces.has(stInternal))))
                     continue;
                 // Leftover strips up to two lines wide next to a zone join it.
                 const float sliver = float(layerm->flow(frSolidInfill).scaled_width());
                 Surfaces out;
                 for (const Surface &surface : fill_surfaces.surfaces) {
-                    if (surface.surface_type != stInternalSolid && surface.surface_type != stInternalBridge && surface.surface_type != stBottomBridge) {
+                    if (surface.surface_type != stInternalSolid && surface.surface_type != stInternalBridge && surface.surface_type != stBottomBridge &&
+                        ! (shell_mode && surface.surface_type == stInternal)) {
                         out.emplace_back(surface);
                         continue;
                     }
@@ -5100,6 +5144,8 @@ void PrintObject::mark_surface_filament_shells()
                         for (ExPolygon &expoly : in_zone) {
                             Surface &s   = out.emplace_back(surface, std::move(expoly));
                             s.shell_zone = shell_zone;
+                            if (s.surface_type == stInternal)
+                                s.surface_type = stInternalSolid;
                         }
                     }
                     for (ExPolygon &expoly : rest)

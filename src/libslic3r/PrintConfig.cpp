@@ -7125,6 +7125,29 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInt(1));
 
+    def = this->add("shell_filament_id", coInt);
+    def->gui_type = ConfigOptionDef::GUIType::i_enum_open;
+    def->label = L("Shell");
+    def->category = L("Extruders");
+    def->tooltip = L("Filament to print the shell with, see \"Shell thickness\".\n\"Default\" uses the outer walls filament.");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(0));
+
+    def = this->add("shell_thickness", coFloat);
+    def->label = L("Shell thickness");
+    def->category = L("Extruders");
+    def->tooltip = L("Encloses the object in a shell of this thickness printed with the shell filament, the same on every "
+                     "side: walls, top, bottom, slopes and overhangs, also where the object stands on support. The walls, "
+                     "as many as fit the thickness, and the solid infill filling the rest of the shell use the shell "
+                     "filament, sized for its nozzle; the sparse and solid infill inside it use their own filaments. "
+                     "Overrides the outer wall, inner wall, top and bottom surface filaments and their counts. "
+                     "0 disables the shell.");
+    def->sidetext = u8"mm";	// milimeters, don't need translation
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.));
+
     def = this->add("internal_solid_infill_line_width", coFloatOrPercent);
     def->label = L("Internal solid infill");
     def->category = L("Quality");

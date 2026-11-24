@@ -640,7 +640,7 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
     static const char* physical_only_keys[] = { "support_filament", "support_interface_filament", "brim_filament_id", "wipe_tower_filament" };
     static const char* feature_keys[] = { "outer_wall_filament_id", "inner_wall_filament_id",
                                           "sparse_infill_filament_id", "internal_solid_filament_id",
-                                          "top_surface_filament_id", "bottom_surface_filament_id" };
+                                          "top_surface_filament_id", "bottom_surface_filament_id", "shell_filament_id" };
     auto reset_invalid_filament = [this, config, filament_cnt](const char* key, bool allow_mixed) {
         auto* opt = dynamic_cast<ConfigOptionInt*>(config->option(key, false));
         if (opt == nullptr)
@@ -1046,6 +1046,14 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     toggle_field("outer_wall_filament_id", have_perimeters || have_brim, -1, wall_filament_reason);
     toggle_field("inner_wall_filament_id", have_perimeters || have_brim, -1, wall_filament_reason);
     toggle_field("outer_wall_filament_loops", have_perimeters, -1, wall_filament_reason);
+    // Orca: The shell takes over the wall, top and bottom surface filaments and their counts.
+    const bool     has_shell    = config->opt_float("shell_thickness") > 0.;
+    const wxString shell_reason = _L("Set shell thickness to 0 to edit this setting.");
+    toggle_field("shell_filament_id", has_shell, -1, _L("Set shell thickness above zero to select the shell filament."));
+    for (auto el : { "outer_wall_filament_id", "outer_wall_filament_loops", "inner_wall_filament_id", "top_surface_filament_id",
+                     "top_surface_filament_layers", "bottom_surface_filament_id", "bottom_surface_filament_layers" })
+        if (has_shell)
+            toggle_field(el, false, -1, shell_reason);
 
     const BrimType brim_type = config->opt_enum<BrimType>("brim_type");
     const bool have_auto_brim_ear = brim_type == btEar && !is_belt_tilted;

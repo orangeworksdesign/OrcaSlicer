@@ -1603,6 +1603,8 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt, top_surface_filament_layers))
     ((ConfigOptionInt, bottom_surface_filament_id))
     ((ConfigOptionInt, bottom_surface_filament_layers))
+    ((ConfigOptionInt, shell_filament_id))
+    ((ConfigOptionFloat, shell_thickness))
     ((ConfigOptionFloatOrPercent, internal_solid_infill_line_width))
     ((ConfigOptionFloatsNullable, internal_solid_infill_speed))
     ((ConfigOptionFloatsOrPercentsNullable, internal_solid_infill_volumetric_flow))
