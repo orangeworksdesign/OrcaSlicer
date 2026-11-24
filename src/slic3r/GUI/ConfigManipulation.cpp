@@ -1047,10 +1047,11 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     toggle_field("inner_wall_filament_id", have_perimeters || have_brim, -1, wall_filament_reason);
     toggle_field("outer_wall_filament_loops", have_perimeters, -1, wall_filament_reason);
     // Orca: The shell takes over the wall, top and bottom surface filaments and their counts.
-    const bool     has_shell    = config->opt_float("shell_thickness") > 0.;
-    const wxString shell_reason = _L("Set shell thickness to 0 to edit this setting.");
-    toggle_field("shell_filament_id", has_shell, -1, _L("Set shell thickness above zero to select the shell filament."));
-    for (auto el : { "outer_wall_filament_id", "outer_wall_filament_loops", "inner_wall_filament_id", "top_surface_filament_id",
+    const bool     has_shell_filament = config->opt_int("shell_filament_id") > 0;
+    const bool     has_shell          = has_shell_filament && config->opt_float("shell_thickness") > 0.;
+    const wxString shell_reason       = _L("Set the shell filament to \"Default\" or the shell thickness to 0 to edit this setting.");
+    toggle_field("shell_thickness", has_shell_filament, -1, _L("Select a shell filament to set the shell thickness."));
+    for (auto el : { "outer_wall_filament_id", "outer_wall_filament_loops", "top_surface_filament_id",
                      "top_surface_filament_layers", "bottom_surface_filament_id", "bottom_surface_filament_layers" })
         if (has_shell)
             toggle_field(el, false, -1, shell_reason);

@@ -7208,7 +7208,7 @@ LayerResult GCode::process_layer(
                                                        const ExtrusionEntityCollection *overrides_key,
                                                        bool                             use_overrides) {
                             // This extrusion is part of certain Region, which tells us which extruder should be used for it.
-                            int correct_extruder_id = layer_tools.extruder(*current_extrusions, region);
+                            int correct_extruder_id = layer_tools.extruder(*current_extrusions, region, layerm->outer_wall_loops);
 
                             const WipingExtrusions::ExtruderPerCopy *entity_overrides = nullptr;
                             if (! layer_tools.has_extruder(correct_extruder_id)) {
@@ -7262,7 +7262,7 @@ LayerResult GCode::process_layer(
                             }
                         };
 
-                        const int outer_loops = region.config().outer_wall_filament_loops.value;
+                        const int outer_loops = layerm->outer_wall_loops;
                         const auto is_inner = [outer_loops](const ExtrusionEntity *entity) { return is_inner_wall(*entity, outer_loops); };
                         const size_t inner_count = entity_type == ObjectByExtruder::Island::Region::PERIMETERS ?
                             std::count_if(extrusions->entities.begin(), extrusions->entities.end(), is_inner) : 0;

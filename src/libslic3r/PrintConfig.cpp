@@ -7129,7 +7129,7 @@ void PrintConfigDef::init_fff_params()
     def->gui_type = ConfigOptionDef::GUIType::i_enum_open;
     def->label = L("Shell");
     def->category = L("Extruders");
-    def->tooltip = L("Filament to print the shell with, see \"Shell thickness\".\n\"Default\" uses the outer walls filament.");
+    def->tooltip = L("Filament to print the shell with, see \"Shell thickness\".\n\"Default\" turns the shell off.");
     def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInt(0));
@@ -7138,11 +7138,11 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Shell thickness");
     def->category = L("Extruders");
     def->tooltip = L("Encloses the object in a shell of this thickness printed with the shell filament, the same on every "
-                     "side: walls, top, bottom, slopes and overhangs, also where the object stands on support. The walls, "
-                     "as many as fit the thickness, and the solid infill filling the rest of the shell use the shell "
-                     "filament, sized for its nozzle; the sparse and solid infill inside it use their own filaments. "
-                     "Overrides the outer wall, inner wall, top and bottom surface filaments and their counts. "
-                     "0 disables the shell.");
+                     "side: walls, top, bottom, slopes and overhangs, also where the object stands on support. Of the walls, "
+                     "the outer ones that fit the thickness use the shell filament, sized for its nozzle, and the rest the "
+                     "inner walls filament. Where the shell reaches further in than its walls, at tops, bottoms, slopes and "
+                     "overhangs, it is solid infill in the shell filament. The infill inside the shell uses its own filaments. "
+                     "Overrides the outer wall, top and bottom surface filaments and their counts. 0 disables the shell.");
     def->sidetext = u8"mm";	// milimeters, don't need translation
     def->min = 0;
     def->mode = comAdvanced;

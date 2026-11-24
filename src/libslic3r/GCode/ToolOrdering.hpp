@@ -166,7 +166,8 @@ public:
     unsigned int sparse_infill_filament_id(const PrintRegion &region) const;
     unsigned int internal_solid_filament_id(const PrintRegion &region) const;
 	// Returns a zero based extruder this eec should be printed with, according to PrintRegion config or extruder_override if overriden.
-	unsigned int extruder(const ExtrusionEntityCollection &extrusions, const PrintRegion &region) const;
+	// outer_wall_loops: LayerRegion::outer_wall_loops of the walls' layer region, 0 for the region config's.
+	unsigned int extruder(const ExtrusionEntityCollection &extrusions, const PrintRegion &region, int outer_wall_loops = 0) const;
 
     coordf_t 					print_z	= 0.;
     bool 						has_object = false;

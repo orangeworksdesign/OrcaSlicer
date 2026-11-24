@@ -121,18 +121,6 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) &&
          this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
 
-    // Orca: In shell mode every wall belongs to the shell, as many as fit its thickness. See PrintObject::make_shell_zones().
-    const bool        shell_mode = region_config.shell_thickness.value > 0.;
-    PrintRegionConfig shell_region_config;
-    if (shell_mode) {
-        const Flow ext_flow   = this->flow(frExternalPerimeter);
-        const Flow inner_flow = this->flow(frPerimeter);
-        shell_region_config   = region_config;
-        shell_region_config.wall_loops.value =
-            1 + std::max(0, int(std::lround((region_config.shell_thickness.value - ext_flow.width()) / inner_flow.spacing())));
-    }
-    const PrintRegionConfig &generator_config = shell_mode ? shell_region_config : region_config;
-
     double model_rotation_rad = 0.0;
     if (region_config.align_infill_direction_to_model) {
         auto m = this->layer()->object()->trafo().matrix();
@@ -146,7 +134,7 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         this->layer()->height,
         this->layer()->slice_z,
         this->flow(frPerimeter),
-        &generator_config,
+        &region_config,
         &this->layer()->object()->config(),
         &print_config,
         spiral_mode,
@@ -174,13 +162,30 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
     // Orca: The inner walls printed with the outer wall filament are sized for its nozzle. Only where that changes their
     // width, so the walls are generated as before otherwise.
     g.outer_group_flow      = this->flow(frPerimeter, this->layer()->height, region_config.outer_wall_filament_id.value);
-    if (region_config.outer_wall_filament_loops.value > 1 &&
+    // Orca: In shell mode the outer walls are those fitting the shell thickness, at least one, at most all.
+    const bool shell_mode = region_config.shell_thickness.value > 0.;
+    double     shell_walls_width = 0.;
+    if (shell_mode) {
+        const double ext_width = g.ext_perimeter_flow.width();
+        const double spacing   = g.outer_group_flow.spacing();
+        this->outer_wall_loops = std::clamp(1 + int(std::lround((region_config.shell_thickness.value - ext_width) / spacing)), 1,
+                                            std::max(1, region_config.wall_loops.value));
+        shell_walls_width      = ext_width + (this->outer_wall_loops - 1) * spacing;
+    } else
+        this->outer_wall_loops = std::max(1, region_config.outer_wall_filament_loops.value);
+    if (this->outer_wall_loops > 1 &&
         region_config.outer_wall_filament_id.value != region_config.inner_wall_filament_id.value &&
         g.outer_group_flow.scaled_width() != g.perimeter_flow.scaled_width())
-        g.outer_group_loops = region_config.outer_wall_filament_loops.value;
-    if (! shell_mode)
-        g.shell_zone   = union_ex(this->shell_zone_top, this->shell_zone_bottom);
-    g.shell_zone_walls = std::max(1, region_config.outer_wall_filament_loops.value);
+        g.outer_group_loops = this->outer_wall_loops;
+    g.shell_zone_walls = this->outer_wall_loops;
+    if (shell_mode) {
+        // The inner walls give way only where the shell reaches further in than the shell walls: at tops, bottoms, slopes
+        // and overhangs. Along upright sides the shell walls are the shell, short of the thickness by less than a wall.
+        const ExPolygons slices_ex  = to_expolygons(slices.surfaces);
+        const ExPolygons shell_band = diff_ex(slices_ex, offset_ex(slices_ex, -float(scale_(shell_walls_width))));
+        g.shell_zone = opening_ex(diff_ex(this->shell_zone_top, shell_band), float(g.outer_group_flow.scaled_spacing()) / 2.f);
+    } else
+        g.shell_zone = union_ex(this->shell_zone_top, this->shell_zone_bottom);
 
     // Cumulative sum of polygons over all the regions, less what the lower layer could not print.
     ExPolygons lower_slices;

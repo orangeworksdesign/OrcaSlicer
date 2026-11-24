@@ -95,6 +95,9 @@ public:
     // surface's filament.
     ExPolygons                  shell_zone_top;
     ExPolygons                  shell_zone_bottom;
+    // Orca: Number of walls, counted from the outside, printed with the outer wall filament, set with the walls:
+    // outer_wall_filament_loops, or in shell mode as many as fit the shell thickness.
+    int                         outer_wall_loops = 1;
 
     Flow    flow(FlowRole role) const;
     // filament_id: 1 based filament whose nozzle sets the width, 0 for the one the role selects.

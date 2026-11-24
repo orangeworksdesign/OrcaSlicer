@@ -4484,16 +4484,15 @@ PrintRegionConfig region_config_from_model_volume(const PrintRegionConfig &defau
     clamp_feature_filament_to_valid(config.internal_solid_filament_id, num_extruders);
     clamp_feature_filament_to_valid(config.top_surface_filament_id, num_extruders);
     clamp_feature_filament_to_valid(config.bottom_surface_filament_id, num_extruders);
-    // Orca: The shell filament prints all walls and the top and bottom surfaces; the infill inside keeps its own filaments.
-    // See PrintObject::make_shell_zones() for the rest of the shell.
+    // Orca: Shell mode, on with a shell filament and thickness. The shell filament prints the outer walls, as many as fit
+    // the thickness (LayerRegion::make_perimeters()), and the top and bottom surfaces; the remaining walls and the infill
+    // keep their own filaments. See PrintObject::make_shell_zones() for the rest of the shell.
+    if (config.shell_filament_id.value <= 0 || config.shell_filament_id.value > int(num_extruders))
+        config.shell_thickness.value = 0.;
     if (config.shell_thickness.value > 0.) {
-        const int shell = config.shell_filament_id.value > 0 && config.shell_filament_id.value <= int(num_extruders) ?
-                              config.shell_filament_id.value : config.outer_wall_filament_id.value;
-        config.outer_wall_filament_id.value     = shell;
-        config.inner_wall_filament_id.value     = shell;
-        config.top_surface_filament_id.value    = shell;
-        config.bottom_surface_filament_id.value = shell;
-        config.outer_wall_filament_loops.value  = 1;
+        config.outer_wall_filament_id.value     = config.shell_filament_id.value;
+        config.top_surface_filament_id.value    = config.shell_filament_id.value;
+        config.bottom_surface_filament_id.value = config.shell_filament_id.value;
     }
     if (config.sparse_infill_density.value < 0.00011f)
         // Switch of infill for very low infill rates, also avoid division by zero in infill generator for these very low rates.

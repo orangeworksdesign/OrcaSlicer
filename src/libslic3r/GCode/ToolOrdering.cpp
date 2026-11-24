@@ -141,7 +141,7 @@ unsigned int LayerTools::internal_solid_filament_id(const PrintRegion &region) c
 }
 
 // 1 based filament of an island's extrusions; the tool ordering and the G-code export must agree on it.
-static unsigned int region_filament(const ExtrusionEntityCollection &extrusions, const PrintRegionConfig &config)
+static unsigned int region_filament(const ExtrusionEntityCollection &extrusions, const PrintRegionConfig &config, int outer_wall_loops = 0)
 {
     // Orca: Solid infill near a top or bottom surface, tagged by Layer::make_fills().
     if (extrusions.filament_id > 0)
@@ -161,7 +161,7 @@ static unsigned int region_filament(const ExtrusionEntityCollection &extrusions,
         return config.internal_solid_filament_id.value;
     }
     // Orca: Classic gap fill lies inside the outer wall. With one wall, the inner wall filament is not in use.
-    const int outer_loops = config.outer_wall_filament_loops.value;
+    const int outer_loops = outer_wall_loops > 0 ? outer_wall_loops : config.outer_wall_filament_loops.value;
     if (extrusions.role() == erGapFill)
         return config.wall_loops.value > outer_loops ? config.inner_wall_filament_id.value : config.outer_wall_filament_id.value;
     const ExtrusionEntitiesPtr &walls = extrusions.entities;
@@ -170,7 +170,7 @@ static unsigned int region_filament(const ExtrusionEntityCollection &extrusions,
 }
 
 // Returns a zero based extruder this eec should be printed with, according to PrintRegion config or extruder_override if overriden.
-unsigned int LayerTools::extruder(const ExtrusionEntityCollection &extrusions, const PrintRegion &region) const
+unsigned int LayerTools::extruder(const ExtrusionEntityCollection &extrusions, const PrintRegion &region, int outer_wall_loops) const
 {
 	assert(region.config().outer_wall_filament_id.value > 0);
 	assert(region.config().sparse_infill_filament_id.value > 0);
@@ -178,7 +178,7 @@ unsigned int LayerTools::extruder(const ExtrusionEntityCollection &extrusions, c
 	assert(region.config().top_surface_filament_id.value > 0);
 	assert(region.config().bottom_surface_filament_id.value > 0);
 	// 1 based extruder ID.
-    const unsigned int extruder = this->extruder_override == 0 ? region_filament(extrusions, region.config()) : this->extruder_override;
+    const unsigned int extruder = this->extruder_override == 0 ? region_filament(extrusions, region.config(), outer_wall_loops) : this->extruder_override;
     unsigned int result = (extruder == 0) ? 0 : extruder - 1;
     return resolve_mixed(result);
 }
@@ -870,7 +870,7 @@ void ToolOrdering::collect_extruders(const PrintObject &object, const std::vecto
                 if (something_nonoverriddable){
                		layer_tools.extruders.emplace_back((extruder_override == 0) ? region.config().outer_wall_filament_id.value : extruder_override);
                     const ExtrusionEntitiesPtr &islands = layerm->perimeters.entities;
-                    const int outer_loops = region.config().outer_wall_filament_loops.value;
+                    const int outer_loops = layerm->outer_wall_loops;
                     const bool has_inner_wall = std::any_of(islands.begin(), islands.end(), [outer_loops](const ExtrusionEntity *island) {
                         const ExtrusionEntitiesPtr &walls = static_cast<const ExtrusionEntityCollection*>(island)->entities;
                         return std::any_of(walls.begin(), walls.end(), [outer_loops](const ExtrusionEntity *ee) { return is_inner_wall(*ee, outer_loops); });

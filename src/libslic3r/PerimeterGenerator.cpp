@@ -2718,24 +2718,27 @@ void PerimeterGenerator::process_arachne()
 
     // Orca: Arachne walls of outline, numbered from 0 for the wall numbered first_wall in the island. The walls numbered
     // below outer_group_loops are printed with the outer wall filament and sized by outer_group_flow, so they are generated
-    // in a pass of their own and the walls inside them in a second one. bead_width_first is used for the first wall
+    // in a pass of their own and the walls inside them in a second one. So is the outer wall alone when the inner walls
+    // are printed with a nozzle of another size, each pass sized for its nozzle. bead_width_first is used for the first wall
     // when it is not one of them.
     const coord_t outer_group_spacing = this->outer_group_flow.scaled_spacing();
+    const bool    split_nozzles       = this->ext_perimeter_flow.nozzle_diameter() != this->perimeter_flow.nozzle_diameter();
+    const int     outer_pass_walls    = std::max(this->outer_group_loops, split_nozzles ? 1 : 0);
     auto make_walls = [&](const Polygons &outline, coord_t bead_width_first, int first_wall, coord_t loops, coord_t wall_0_inset,
                           const Arachne::WallToolPathsParams &params, Polygons &inner_contour) {
-        const coord_t outer_loops = std::clamp<coord_t>(coord_t(this->outer_group_loops - first_wall), 0, loops);
-        if (this->outer_group_loops <= 1 || outer_loops == 0) {
-            Arachne::WallToolPaths tool_paths(outline, bead_width_first, perimeter_spacing, size_t(loops), wall_0_inset, layer_height, params);
-            std::vector<Arachne::VariableWidthLines> walls = tool_paths.getToolPaths();
-            inner_contour = tool_paths.getInnerContour();
-            return walls;
-        }
-        // Each pass is sized for the nozzle printing it.
         auto params_for = [&params, this](double nozzle_diameter) {
             Arachne::WallToolPathsParams out = Arachne::make_paths_params(this->layer_id, *object_config, *print_config, nozzle_diameter);
             out.is_top_or_bottom_layer       = params.is_top_or_bottom_layer;
             return out;
         };
+        const coord_t outer_loops = std::clamp<coord_t>(coord_t(outer_pass_walls - first_wall), 0, loops);
+        if (outer_loops == 0 || (outer_pass_walls <= 1 && ! split_nozzles)) {
+            Arachne::WallToolPaths tool_paths(outline, bead_width_first, perimeter_spacing, size_t(loops), wall_0_inset, layer_height,
+                                              split_nozzles && outer_loops == 0 ? params_for(this->perimeter_flow.nozzle_diameter()) : params);
+            std::vector<Arachne::VariableWidthLines> walls = tool_paths.getToolPaths();
+            inner_contour = tool_paths.getInnerContour();
+            return walls;
+        }
         Arachne::WallToolPaths outer_tool_paths(outline, first_wall == 0 ? bead_width_first : outer_group_spacing, outer_group_spacing,
                                                 size_t(outer_loops), wall_0_inset, layer_height,
                                                 params_for(std::min(this->ext_perimeter_flow.nozzle_diameter(), this->outer_group_flow.nozzle_diameter())));
