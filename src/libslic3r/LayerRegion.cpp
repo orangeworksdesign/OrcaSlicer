@@ -55,14 +55,14 @@ Flow LayerRegion::flow(FlowRole role, double layer_height, unsigned int filament
     return m_region->flow(*m_layer->object(), role, layer_height, m_layer->id() == 0, filament_id);
 }
 
-Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const
+Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge, unsigned int filament_id) const
 {
     const PrintRegion       &region         = this->region();
     const PrintRegionConfig &region_config  = region.config();
     const PrintObject       &print_object   = *this->layer()->object();
     Flow bridge_flow;
     // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will fall back to zero'th element, so everything is all right.
-    auto nozzle_diameter = float(nozzle_diameter_for_filament(print_object.print()->config(), region.extruder(role), print_object.print()->is_BBL_printer()));
+    auto nozzle_diameter = float(nozzle_diameter_for_filament(print_object.print()->config(), filament_id > 0 ? filament_id : region.extruder(role), print_object.print()->is_BBL_printer()));
     const ConfigOptionFloatOrPercent& bridge_width_opt = region_config.bridge_line_width;
     const double                      bridge_width      = bridge_width_opt.get_abs_value(nozzle_diameter);
     const bool                        has_bridge_width  = bridge_width > 0.;
@@ -77,7 +77,7 @@ Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const
         bridge_flow = Flow::bridging_flow(thread_diameter, nozzle_diameter);
     } else {
         // The same way as other slicers: Use normal extrusions. Apply bridge_flow while maintaining the original spacing.
-        Flow base_flow = this->flow(role);
+        Flow base_flow = this->flow(role, this->layer()->height, filament_id);
         if (has_bridge_width)
             base_flow = Flow(float(bridge_width), base_flow.height(), nozzle_diameter);
         bridge_flow = base_flow.with_flow_ratio(bridge_flow_ratio);
@@ -166,6 +166,8 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         region_config.outer_wall_filament_id.value != region_config.inner_wall_filament_id.value &&
         g.outer_group_flow.scaled_width() != g.perimeter_flow.scaled_width())
         g.outer_group_loops = region_config.outer_wall_filament_loops.value;
+    g.shell_zone       = union_ex(this->shell_zone_top, this->shell_zone_bottom);
+    g.shell_zone_walls = std::max(1, region_config.outer_wall_filament_loops.value);
 
     // Cumulative sum of polygons over all the regions, less what the lower layer could not print.
     ExPolygons lower_slices;

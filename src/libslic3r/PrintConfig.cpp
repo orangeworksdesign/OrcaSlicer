@@ -7094,8 +7094,10 @@ void PrintConfigDef::init_fff_params()
     def = this->add("top_surface_filament_layers", coInt);
     def->label = L("Top surface layers");
     def->category = L("Extruders");
-    def->tooltip = L("Number of solid layers, counted down from a top surface, that are printed with the top surface filament. "
-                     "The layers below the top surface keep the internal solid infill pattern and speed.");
+    def->tooltip = L("Number of layers, counted down from a top of the object, that are printed with the top surface filament. "
+                     "With more than one, these layers keep only the walls printed with the outer wall filament (see "
+                     "\"Outer wall loops\"); the rest of them is solid infill in the top surface filament, with the internal "
+                     "solid infill pattern and speed.");
     def->min = 1;
     def->max = 1000;
     def->mode = comAdvanced;
@@ -7113,8 +7115,11 @@ void PrintConfigDef::init_fff_params()
     def = this->add("bottom_surface_filament_layers", coInt);
     def->label = L("Bottom surface layers");
     def->category = L("Extruders");
-    def->tooltip = L("Number of solid layers, counted up from a bottom surface, that are printed with the bottom surface filament. "
-                     "The layers above the bottom surface keep the internal solid infill pattern and speed.");
+    def->tooltip = L("Number of layers, counted up from a bottom of the object, that are printed with the bottom surface filament. "
+                     "A bottom is wherever the object starts: on the bed, on support, over a hole or under an overhang. "
+                     "With more than one, these layers keep only the walls printed with the outer wall filament (see "
+                     "\"Outer wall loops\"); the rest of them, bridges included, is solid infill in the bottom surface filament, "
+                     "with the internal solid infill pattern and speed.");
     def->min = 1;
     def->max = 1000;
     def->mode = comAdvanced;

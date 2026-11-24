@@ -623,6 +623,8 @@ void PrintObject::make_perimeters()
         BOOST_LOG_TRIVIAL(debug) << "Generating extra perimeters for region " << region_id << " in parallel - end";
     }
 
+    this->make_shell_zones();
+
     BOOST_LOG_TRIVIAL(debug) << "Generating perimeters in parallel - start";
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, m_layers.size()),
@@ -1703,9 +1705,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "sparse_infill_filament_id"
             || opt_key == "internal_solid_filament_id"
             || opt_key == "top_surface_filament_id"
-            || opt_key == "top_surface_filament_layers"
             || opt_key == "bottom_surface_filament_id"
-            || opt_key == "bottom_surface_filament_layers"
             || opt_key == "sparse_infill_line_width"
             || opt_key == "skin_infill_line_width"
             || opt_key == "skeleton_infill_line_width"
@@ -1800,6 +1800,8 @@ bool PrintObject::invalidate_state_by_config_options(
                opt_key == "outer_wall_line_width"
             || opt_key == "outer_wall_filament_id"
             || opt_key == "outer_wall_filament_loops"
+            || opt_key == "top_surface_filament_layers"
+            || opt_key == "bottom_surface_filament_layers"
             || opt_key == "inner_wall_filament_id"
             || opt_key == "fuzzy_skin"
             || opt_key == "fuzzy_skin_thickness"
@@ -5017,52 +5019,67 @@ void PrintObject::discover_horizontal_shells()
 #endif    /* SLIC3R_DEBUG_SLICE_PROCESSING */
 } // void PrintObject::discover_horizontal_shells()
 
-// combine fill surfaces across layers to honor the "infill every N layers" option
-// Idempotence of this method is guaranteed by the fact that we don't remove things from
-// fill_surfaces but we only turn them into VOID surfaces, thus preserving the boundaries.
-// Orca: Split the internal solid infill lying within top_surface_filament_layers below a top surface or
-// bottom_surface_filament_layers above a bottom surface, so that it is printed with that surface's filament.
-// The top or bottom surface itself is the first of these layers.
+// Orca: Find the parts of each layer within top_surface_filament_layers of a top of the object or within
+// bottom_surface_filament_layers of a bottom: those not covered by every one of the next that many layers above, or below.
+// The bed, support and holes count as outside the object, so this also catches overhangs, parts standing on support and
+// the layers around holes. The top or bottom surface itself is the first of these layers.
+void PrintObject::make_shell_zones()
+{
+    const int num_layers = int(m_layers.size());
+    for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
+        const PrintRegionConfig &config        = this->printing_region(region_id).config();
+        const int                top_layers    = config.top_surface_filament_layers.value > 1 ? config.top_surface_filament_layers.value : 0;
+        const int                bottom_layers = config.bottom_surface_filament_layers.value > 1 ? config.bottom_surface_filament_layers.value : 0;
+        tbb::parallel_for(tbb::blocked_range<int>(0, num_layers), [&](const tbb::blocked_range<int> &range) {
+            for (int idx = range.begin(); idx < range.end(); ++ idx) {
+                m_print->throw_if_canceled();
+                LayerRegion *layerm = m_layers[idx]->get_region(int(region_id));
+                // Strips narrower than a quarter of a line, where the outlines of neighbouring layers differ slightly, are noise.
+                const float noise = 0.25f * float(layerm->flow(frSolidInfill).scaled_width());
+                auto shell_zone = [this, idx, num_layers, noise](int layers, int dir) {
+                    const ExPolygons &slices  = m_layers[idx]->lslices;
+                    Polygons          covered = to_polygons(slices);
+                    for (int k = 1; k <= layers && ! covered.empty(); ++ k) {
+                        const int i = idx + dir * k;
+                        covered = i < 0 || i >= num_layers ? Polygons() : intersection(covered, to_polygons(m_layers[i]->lslices));
+                    }
+                    return opening_ex(diff_ex(slices, covered), noise);
+                };
+                layerm->shell_zone_top    = top_layers > 0 ? shell_zone(top_layers, 1) : ExPolygons();
+                layerm->shell_zone_bottom = bottom_layers > 0 ? shell_zone(bottom_layers, -1) : ExPolygons();
+            }
+        });
+    }
+}
+
+// Orca: Split off the solid infill and bridges lying in the shell zones found by make_shell_zones(), to print them
+// with that surface's filament.
 void PrintObject::mark_surface_filament_shells()
 {
+    const int num_layers = int(m_layers.size());
     for (size_t region_id = 0; region_id < this->num_printing_regions(); ++ region_id) {
-        const PrintRegionConfig &config = this->printing_region(region_id).config();
-        const int top_layers    = config.top_surface_filament_layers.value > 1 &&
-                                  config.top_surface_filament_id.value != config.internal_solid_filament_id.value ?
-                                  config.top_surface_filament_layers.value : 0;
-        const int bottom_layers = config.bottom_surface_filament_layers.value > 1 &&
-                                  config.bottom_surface_filament_id.value != config.internal_solid_filament_id.value ?
-                                  config.bottom_surface_filament_layers.value : 0;
-        if (top_layers == 0 && bottom_layers == 0)
+        const PrintRegionConfig &config        = this->printing_region(region_id).config();
+        const bool               top_infill    = config.top_surface_filament_id.value != config.internal_solid_filament_id.value;
+        const bool               bottom_infill = config.bottom_surface_filament_id.value != config.internal_solid_filament_id.value;
+        if (! top_infill && ! bottom_infill)
             continue;
-
-        const int num_layers = int(m_layers.size());
-        // Polygons of the given surface types of this region on layers [first, last].
-        auto surfaces_on_layers = [this, region_id, num_layers](int first, int last, std::initializer_list<SurfaceType> types) {
-            Polygons out;
-            for (int i = std::max(first, 0); i <= std::min(last, num_layers - 1); ++ i)
-                append(out, to_polygons(m_layers[i]->get_region(int(region_id))->fill_surfaces.filter_by_types(types)));
-            return out;
-        };
-
-        // Computed for all layers before any is modified, as each layer reads the surfaces of its neighbours.
         std::vector<std::optional<Surfaces>> new_surfaces(m_layers.size());
         tbb::parallel_for(tbb::blocked_range<int>(0, num_layers), [&](const tbb::blocked_range<int> &range) {
             for (int idx = range.begin(); idx < range.end(); ++ idx) {
                 m_print->throw_if_canceled();
-                const SurfaceCollection &fill_surfaces = m_layers[idx]->get_region(int(region_id))->fill_surfaces;
-                if (! fill_surfaces.has(stInternalSolid))
+                const LayerRegion       *layerm        = m_layers[idx]->get_region(int(region_id));
+                const ExPolygons         empty;
+                const ExPolygons        &top_zone      = top_infill ? layerm->shell_zone_top : empty;
+                const ExPolygons        &bottom_zone   = bottom_infill ? layerm->shell_zone_bottom : empty;
+                const SurfaceCollection &fill_surfaces = layerm->fill_surfaces;
+                if ((top_zone.empty() && bottom_zone.empty()) ||
+                    ! (fill_surfaces.has(stInternalSolid) || fill_surfaces.has(stInternalBridge) || fill_surfaces.has(stBottomBridge)))
                     continue;
-                const Polygons top_zone    = top_layers > 0 ? surfaces_on_layers(idx + 1, idx + top_layers - 1, { stTop }) : Polygons();
-                const Polygons bottom_zone = bottom_layers > 0 ? surfaces_on_layers(idx - bottom_layers + 1, idx - 1, { stBottom, stBottomBridge }) : Polygons();
-                if (top_zone.empty() && bottom_zone.empty())
-                    continue;
-                // Leftover strips up to two lines wide next to a zone join it. They come from neighbouring layers'
-                // wall outlines not lining up exactly, e.g. the wider walls of the first layer.
-                const float sliver = float(m_layers[idx]->get_region(int(region_id))->flow(frSolidInfill).scaled_width());
+                // Leftover strips up to two lines wide next to a zone join it.
+                const float sliver = float(layerm->flow(frSolidInfill).scaled_width());
                 Surfaces out;
                 for (const Surface &surface : fill_surfaces.surfaces) {
-                    if (surface.surface_type != stInternalSolid) {
+                    if (surface.surface_type != stInternalSolid && surface.surface_type != stInternalBridge && surface.surface_type != stBottomBridge) {
                         out.emplace_back(surface);
                         continue;
                     }
@@ -5076,7 +5093,7 @@ void PrintObject::mark_surface_filament_shells()
                         rest = diff_ex(rest, *zone);
                         ExPolygons slivers = intersection_ex(diff_ex(rest, opening_ex(rest, sliver)), expand(*zone, 2.f * sliver));
                         if (! slivers.empty()) {
-                            rest    = diff_ex(rest, slivers);
+                            rest = diff_ex(rest, slivers);
                             append(in_zone, std::move(slivers));
                             in_zone = union_ex(in_zone);
                         }
@@ -5097,6 +5114,9 @@ void PrintObject::mark_surface_filament_shells()
     }
 }
 
+// combine fill surfaces across layers to honor the "infill every N layers" option
+// Idempotence of this method is guaranteed by the fact that we don't remove things from
+// fill_surfaces but we only turn them into VOID surfaces, thus preserving the boundaries.
 void PrintObject::combine_infill()
 {
     // Work on each region separately.

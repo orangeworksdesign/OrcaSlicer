@@ -89,10 +89,18 @@ public:
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   fills;
 
+    // Orca: The parts of this layer within top_surface_filament_layers of a top of the object and within
+    // bottom_surface_filament_layers of a bottom, set by PrintObject::make_shell_zones(). Empty unless more than one
+    // layer is set. Only the outer wall group is generated in them, the rest is solid infill printed with that
+    // surface's filament.
+    ExPolygons                  shell_zone_top;
+    ExPolygons                  shell_zone_bottom;
+
     Flow    flow(FlowRole role) const;
     // filament_id: 1 based filament whose nozzle sets the width, 0 for the one the role selects.
     Flow    flow(FlowRole role, double layer_height, unsigned int filament_id = 0) const;
-    Flow    bridging_flow(FlowRole role, bool thick_bridge = false) const;
+    Flow    bridging_flow(FlowRole role, bool thick_bridge = false, unsigned int filament_id = 0) const;
+
 
     void    slices_to_fill_surfaces_clipped();
     void    prepare_fill_surfaces();

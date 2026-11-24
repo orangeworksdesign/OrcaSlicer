@@ -1011,10 +1011,13 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
                     params.extruder = region_config.top_surface_filament_id;
                 else if (params.extrusion_role == erBottomSurface)
                     params.extruder = region_config.bottom_surface_filament_id;
+                // Orca: Solid infill and bridges in the top/bottom surface filament layers, see PrintObject::mark_surface_filament_shells().
+                else if (surface.shell_zone == SurfaceShellZone::Top)
+                    params.extruder = region_config.top_surface_filament_id;
+                else if (surface.shell_zone == SurfaceShellZone::Bottom)
+                    params.extruder = region_config.bottom_surface_filament_id;
                 else if (params.extrusion_role == erSolidInfill)
-                    params.extruder = surface.shell_zone == SurfaceShellZone::Top    ? region_config.top_surface_filament_id :
-                                      surface.shell_zone == SurfaceShellZone::Bottom ? region_config.bottom_surface_filament_id :
-                                                                                       region_config.internal_solid_filament_id;
+                    params.extruder = region_config.internal_solid_filament_id;
                 // Orca: forced fill order applies only to top/bottom surfaces filled with a
                 // center-based pattern; everything else stays at Default to keep batching together.
                 if (params.pattern == ipConcentric || params.pattern == ipSpiralInset || params.pattern == ipArchimedeanChords || params.pattern == ipOctagramSpiral) {
@@ -1082,7 +1085,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
                 const bool is_thick_bridge = surface.is_bridge() && (surface.is_internal_bridge() ? object_config.thick_internal_bridges : object_config.thick_bridges);
 				params.flow   = params.bridge ?
 					//Orca: enable thick bridge based on config
-					layerm.bridging_flow(extrusion_role, is_thick_bridge) :
+					layerm.bridging_flow(extrusion_role, is_thick_bridge, surface.shell_zone != SurfaceShellZone::None ? params.extruder : 0) :
 					// Orca: Bottom surfaces and the solid layers printed with a surface filament take the width for its nozzle,
 					// not for the internal solid infill filament their flow role selects.
 					layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness,
@@ -1312,6 +1315,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 				surface_fills.back().region_id = surface_fills[i].region_id;
 				surface_fills.back().surface.surface_type = stInternalSolid;
 				surface_fills.back().surface.thickness = surface_fills[i].surface.thickness;
+                surface_fills.back().surface.shell_zone    = surface_fills[i].surface.shell_zone;
                 surface_fills.back().region_id_group       = surface_fills[i].region_id_group;
                 surface_fills.back().no_overlap_expolygons = surface_fills[i].no_overlap_expolygons;
 			    // BBS: move the narrow expolygons to new surface_fills.back();
@@ -1547,8 +1551,8 @@ void Layer::make_fills(const FillAdaptive::RegionOctrees* fill_octrees, FillLigh
 			f->fill_surface_extrusion(&surface_fill.surface,
 				params,
 				fills);
-            // Orca: The tool ordering picks a filament by extrusion role, so tag solid infill printed with a surface filament.
-            if (surface_fill.surface.shell_zone != SurfaceShellZone::None && surface_fill.params.extrusion_role == erSolidInfill)
+            // Orca: The tool ordering picks a filament by extrusion role, so tag the solid infill and bridges printed with a surface filament.
+            if (surface_fill.surface.shell_zone != SurfaceShellZone::None)
                 for (size_t i = first_new_fill; i < fills.size(); ++ i)
                     if (auto *eec = dynamic_cast<ExtrusionEntityCollection*>(fills[i]))
                         eec->filament_id = int(surface_fill.params.extruder);

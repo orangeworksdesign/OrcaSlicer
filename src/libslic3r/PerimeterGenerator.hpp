@@ -100,6 +100,10 @@ public:
     // by outer_group_flow, the inner wall width for its nozzle. 1 if they are sized like the other inner walls.
     int                          outer_group_loops = 1;
     Flow                         outer_group_flow;
+    // Orca: The parts of the layer in the top/bottom surface filament layers, see PrintObject::make_shell_zones(). Only
+    // the first shell_zone_walls walls are generated there, the inner walls give way to solid infill.
+    ExPolygons                   shell_zone;
+    int                          shell_zone_walls = 1;
     const PrintRegionConfig     *config;
     const PrintObjectConfig     *object_config;
     const PrintConfig           *print_config;

@@ -659,6 +659,7 @@ private:
     void clip_fill_surfaces();
     void discover_horizontal_shells();
     void combine_infill();
+    void make_shell_zones();
     void mark_surface_filament_shells();
     void _generate_support_material();
     FillAdaptive::RegionOctrees prepare_adaptive_infill_data(

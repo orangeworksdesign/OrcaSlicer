@@ -1588,6 +1588,8 @@ void PerimeterGenerator::process_classic()
         ExPolygons one_wall_top_reclaimed;
         Polygons   one_wall_top_kept_bands;
         bool       apply_one_wall_top = false;
+        // Orca: the part of the island in the top/bottom surface filament layers left to solid infill, see shell_zone.
+        ExPolygons shell_zone_fill;
         if (loop_number >= 0) {
             // In case no perimeters are to be generated, loop_number will equal to -1.
             std::vector<PerimeterGeneratorLoops> contours(loop_number+1);    // depth => loops
@@ -1742,6 +1744,15 @@ void PerimeterGenerator::process_classic()
                         hole.is_thin_wall_hole   = out_of_reach(hole.polygon, gap_fill_reach);
                         hole.is_narrow_wall_hole = narrow_holes_ordered && out_of_reach(hole.polygon, inner_wall_reach);
                     }
+                }
+
+                // Orca: In the top/bottom surface filament layers only the outer wall group is generated. Inside it, the zone
+                // is left to solid infill and the inner walls are onioned around it, their outer edge at its boundary.
+                if (i + 1 == this->shell_zone_walls && i < loop_number && ! this->shell_zone.empty()) {
+                    const coord_t distance = wall_distance(i + 1);
+                    shell_zone_fill = intersection_ex(offset_ex(last, -float(distance - perimeter_spacing / 2)), this->shell_zone);
+                    if (! shell_zone_fill.empty())
+                        last = diff_ex(last, offset_ex(this->shell_zone, -float(distance - perimeter_spacing / 2)));
                 }
 
                 //BBS: refer to superslicer
@@ -2106,6 +2117,8 @@ void PerimeterGenerator::process_classic()
         // ORCA: only_one_wall_top - what the top fill does not cover of the dropped walls goes to infill.
         if (!one_wall_top_reclaimed.empty())
             infill_exp = union_ex(infill_exp, one_wall_top_reclaimed);
+        if (!shell_zone_fill.empty())
+            infill_exp = union_ex(infill_exp, shell_zone_fill);
         this->fill_surfaces->append(infill_exp, stInternal);
 
         apply_extra_perimeters(infill_exp);
@@ -2126,6 +2139,8 @@ void PerimeterGenerator::process_classic()
                 polyWithoutOverlap = union_ex(polyWithoutOverlap, top_infill_exp);
             if (!one_wall_top_reclaimed.empty())
                 polyWithoutOverlap = union_ex(polyWithoutOverlap, one_wall_top_reclaimed);
+            if (!shell_zone_fill.empty())
+                polyWithoutOverlap = union_ex(polyWithoutOverlap, shell_zone_fill);
             this->fill_no_overlap->insert(this->fill_no_overlap->end(), polyWithoutOverlap.begin(), polyWithoutOverlap.end());
         }
 
@@ -2936,6 +2951,32 @@ void PerimeterGenerator::process_arachne()
                 }
             }
             //PS
+
+            // Orca: In the top/bottom surface filament layers only the outer wall group is kept. The inner walls give way to
+            // solid infill, printed with that surface's filament and sized for its nozzle.
+            if (! this->shell_zone.empty() && int(perimeters.size()) > this->shell_zone_walls) {
+                const ExPolygons zone = intersection_ex(this->shell_zone, offset_ex(last, float(bead_width_0)));
+                if (! zone.empty()) {
+                    const coord_t perimeter_width = this->perimeter_flow.scaled_width();
+                    std::vector<Arachne::VariableWidthLines> inner_walls(std::make_move_iterator(perimeters.begin() + this->shell_zone_walls),
+                                                                         std::make_move_iterator(perimeters.end()));
+                    perimeters.resize(this->shell_zone_walls);
+                    Polygons kept_in_zone;
+                    clip_inner_walls_over_top(inner_walls, zone, perimeter_width, kept_in_zone);
+                    // What the dropped walls leave inside the outer group goes to infill. The clip pulls the walls back by
+                    // half a width from the zone, so does the area freed.
+                    Polygons walls_area;
+                    for (const std::vector<Arachne::VariableWidthLines> *walls : { &perimeters, &inner_walls })
+                        for (const Arachne::VariableWidthLines &group : *walls)
+                            append(walls_area, walls_footprint(group));
+                    const ExPolygons freed = diff_ex(intersection_ex(offset_ex(last, float(bead_width_0) / 2.f), offset_ex(zone, float(perimeter_width) / 2.f)),
+                                                     walls_area, ApplySafetyOffset::Yes);
+                    while (! inner_walls.empty() && inner_walls.back().empty())
+                        inner_walls.pop_back();
+                    perimeters.insert(perimeters.end(), std::make_move_iterator(inner_walls.begin()), std::make_move_iterator(inner_walls.end()));
+                    infill_contour = union_ex(infill_contour, freed);
+                }
+            }
 
             loop_number = int(perimeters.size()) - 1;
 
