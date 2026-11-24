@@ -1299,6 +1299,27 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 			ExPolygons normal_infill;
             ExPolygons narrow_infill;
             split_solid_surface(layer.id(), surface_fills[i], normal_infill, narrow_infill);
+            // Orca: On the larger nozzle of a mixed nozzle printer, a corner piece next to the normal infill, between one and
+            // four lines' area, stays with it: the concentric fill, sized for that nozzle, leaves most of such a wedge empty,
+            // where the lines reach into it. A smaller piece is the very tip of a corner the lines already reach.
+            const std::vector<double> &nozzles = layer.object()->print()->config().nozzle_diameter.values;
+            if (! normal_infill.empty() && ! narrow_infill.empty() && ! nozzles.empty() &&
+                surface_fills[i].params.flow.nozzle_diameter() > *std::min_element(nozzles.begin(), nozzles.end()) + EPSILON) {
+                const double     spacing    = scaled<double>(surface_fills[i].params.spacing);
+                const Polygons   normal_out = expand(normal_infill, float(0.1 * spacing));
+                ExPolygons       narrow_kept;
+                bool             moved      = false;
+                for (ExPolygon &expoly : narrow_infill)
+                    if (const double area = expoly.area(); area >= spacing * spacing && area < 4. * spacing * spacing && ! intersection(to_polygons(expoly), normal_out).empty()) {
+                        normal_infill.emplace_back(std::move(expoly));
+                        moved = true;
+                    } else
+                        narrow_kept.emplace_back(std::move(expoly));
+                if (moved) {
+                    narrow_infill = std::move(narrow_kept);
+                    normal_infill = union_ex(normal_infill);
+                }
+            }
 
 			if (narrow_infill.empty()) {
 				// BBS: has no narrow expolygon
