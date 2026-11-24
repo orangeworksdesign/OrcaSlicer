@@ -41,7 +41,8 @@ public:
     coord_t wall_maximum_deviation  = meshfix_maximum_deviation();
 };
 
-WallToolPathsParams make_paths_params(const int layer_id, const PrintObjectConfig &print_object_config, const PrintConfig &print_config);
+// nozzle_diameter: of the nozzle printing the walls, which sizes the beads. 0 for the smallest nozzle.
+WallToolPathsParams make_paths_params(const int layer_id, const PrintObjectConfig &print_object_config, const PrintConfig &print_config, double nozzle_diameter = 0.);
 
 class WallToolPaths
 {

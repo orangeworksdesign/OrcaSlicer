@@ -2730,12 +2730,20 @@ void PerimeterGenerator::process_arachne()
             inner_contour = tool_paths.getInnerContour();
             return walls;
         }
+        // Each pass is sized for the nozzle printing it.
+        auto params_for = [&params, this](double nozzle_diameter) {
+            Arachne::WallToolPathsParams out = Arachne::make_paths_params(this->layer_id, *object_config, *print_config, nozzle_diameter);
+            out.is_top_or_bottom_layer       = params.is_top_or_bottom_layer;
+            return out;
+        };
         Arachne::WallToolPaths outer_tool_paths(outline, first_wall == 0 ? bead_width_first : outer_group_spacing, outer_group_spacing,
-                                                size_t(outer_loops), wall_0_inset, layer_height, params);
+                                                size_t(outer_loops), wall_0_inset, layer_height,
+                                                params_for(std::min(this->ext_perimeter_flow.nozzle_diameter(), this->outer_group_flow.nozzle_diameter())));
         std::vector<Arachne::VariableWidthLines> walls = outer_tool_paths.getToolPaths();
         inner_contour = outer_tool_paths.getInnerContour();
         if (outer_loops < loops && ! inner_contour.empty()) {
-            Arachne::WallToolPaths inner_tool_paths(inner_contour, perimeter_spacing, perimeter_spacing, size_t(loops - outer_loops), 0, layer_height, params);
+            Arachne::WallToolPaths inner_tool_paths(inner_contour, perimeter_spacing, perimeter_spacing, size_t(loops - outer_loops), 0, layer_height,
+                                                    params_for(this->perimeter_flow.nozzle_diameter()));
             std::vector<Arachne::VariableWidthLines> inner_walls = inner_tool_paths.getToolPaths();
             for (Arachne::VariableWidthLines &lines : inner_walls)
                 for (Arachne::ExtrusionLine &el : lines)
@@ -2797,7 +2805,9 @@ void PerimeterGenerator::process_arachne()
                            apply_precise_outer_wall? -float(ext_perimeter_width - ext_perimeter_spacing )
                                                      : -float(ext_perimeter_width / 2. - ext_perimeter_spacing / 2.));
         
-            Arachne::WallToolPathsParams input_params = Arachne::make_paths_params(this->layer_id, *object_config, *print_config);
+            // Orca: beads sized for the nozzles printing the walls, not the smallest nozzle of the printer.
+            Arachne::WallToolPathsParams input_params = Arachne::make_paths_params(this->layer_id, *object_config, *print_config,
+                std::min(this->ext_perimeter_flow.nozzle_diameter(), this->perimeter_flow.nozzle_diameter()));
             // Set params is_top_or_bottom_layer for adjusting short-wall removal sensitivity.
             input_params.is_top_or_bottom_layer = (is_bottom_layer || is_topmost_layer) ? true : false;
 

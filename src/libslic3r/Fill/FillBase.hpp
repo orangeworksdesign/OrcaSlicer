@@ -91,6 +91,8 @@ struct FillParams
     bool        use_arachne{ false };
     // Layer height for Concentric infill with Arachne.
     coordf_t    layer_height    { 0.f };
+    // Orca: Diameter of the nozzle printing the fill, which sizes Arachne's beads. 0 for the smallest nozzle.
+    double      nozzle_diameter { 0. };
 
     // For Gyroid: when true, use the parameterized "optimized" variant.
     bool        gyroid_optimized { false };

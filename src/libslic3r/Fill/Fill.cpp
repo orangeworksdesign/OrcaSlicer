@@ -1458,6 +1458,7 @@ void Layer::make_fills(const FillAdaptive::RegionOctrees* fill_octrees, FillLigh
         params.use_arachne       = surface_fill.params.pattern == ipConcentric || surface_fill.params.pattern == ipSpiralInset ||
                                    surface_fill.params.pattern == ipConcentricInternal;
         params.layer_height      = layerm->layer()->height;
+        params.nozzle_diameter   = surface_fill.params.flow.nozzle_diameter();
         params.lateral_lattice_angle_1   = surface_fill.params.lateral_lattice_angle_1;
         params.lateral_lattice_angle_2   = surface_fill.params.lateral_lattice_angle_2;
         params.infill_overhang_angle   = surface_fill.params.infill_overhang_angle;

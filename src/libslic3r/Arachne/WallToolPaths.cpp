@@ -44,11 +44,12 @@
 namespace Slic3r::Arachne
 {
 
-WallToolPathsParams make_paths_params(const int layer_id, const PrintObjectConfig &print_object_config, const PrintConfig &print_config)
+WallToolPathsParams make_paths_params(const int layer_id, const PrintObjectConfig &print_object_config, const PrintConfig &print_config, double nozzle_diameter)
 {
     WallToolPathsParams input_params;
     {
-        const double min_nozzle_diameter = *std::min_element(print_config.nozzle_diameter.values.begin(), print_config.nozzle_diameter.values.end());
+        const double min_nozzle_diameter = nozzle_diameter > 0. ? nozzle_diameter :
+            *std::min_element(print_config.nozzle_diameter.values.begin(), print_config.nozzle_diameter.values.end());
         if (const auto &min_feature_size_opt = print_object_config.min_feature_size)
             input_params.min_feature_size = min_feature_size_opt.value * 0.01 * min_nozzle_diameter;
 
